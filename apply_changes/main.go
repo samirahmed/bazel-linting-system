@@ -80,6 +80,24 @@ func processLintSystemPackageRoot(repoRoot, lintSystemPkgRoot string) error {
 	return nil
 }
 
+// Each linted package target within a bazel-linting-system directory space will have its own subdirectory.
+// Eg:
+// bazel-bin/api_client/__linting_system/api_client (for //api_client:api_client)
+// bazel-bin/api_client/__linting_system/repl (for //api_client:repl)
+//
+// Therefore given an root and target - we should be able find lint roots
+func findTargetDirs(genFilesRoot string, targets []string) ([]string, error) { 
+	var dirs []string
+	for _, t := range targets {
+		expected := strings.Replace(strings.Replace(t, "//", "/", 1), ":", "/__linting_system/", 1)
+		lintDir := path.Join(genFilesRoot, expected)
+		if _, err := os.Stat(lintDir); !os.IsNotExist(err) {
+			dirs = append(dirs, lintDir)
+		}
+	}
+	return dirs, nil
+}
+
 func findLintSystemDirs(repoRoot string) ([]string, error) {
 	var dirs []string
 	err := filepath.Walk(repoRoot, func(path string, info os.FileInfo, err error) error {
@@ -100,24 +118,25 @@ func findLintSystemDirs(repoRoot string) ([]string, error) {
 func main() {
 	args := os.Args
 
-	if len(args) < 3 {
-		fmt.Println("usage: <bazel-repo-root> $(bazel info bazel-genfiles)")
+	if len(args) < 4 {
+		fmt.Println("usage: <bazel-repo-root> $(bazel info bazel-genfiles) $(bazel query //...:all)")
 		os.Exit(1)
 	}
 
 	repoRoot := args[1]
 	genfilesRoot := args[2]
-
+	targets := args[3:len(args)]
 	// All folders of linted files can be found by searching Bazel's genfiles root for
 	// the (what should be) unique directory name of the bazel-linting-system.
-	matches, err := findLintSystemDirs(genfilesRoot)
+	matches, err := findTargetDirs(genfilesRoot, targets)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
 
 	for _, lintSysPkgRoot := range matches {
-		err := processLintSystemPackageRoot(repoRoot, lintSysPkgRoot)
+		// fmt.Printf("Checking lintDir='%s' \n", lintSysPkgRoot)
+		err = overwriteFilesWithLintedVersions(repoRoot, lintSysPkgRoot)
 		if err != nil {
 			fmt.Printf("Error processing pkg '%s': %s", lintSysPkgRoot, err)
 			os.Exit(1)

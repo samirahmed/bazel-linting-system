@@ -6,6 +6,7 @@ load("//:rules.bzl", "LinterInfo")
 
 SUPPORTED_LANGUAGES = [
     "python",
+    "java",
     "golang",
     "jsonnet",
     "ruby",
@@ -29,6 +30,8 @@ def _select_linter(ctx):
     kind = ctx.rule.kind
     if kind in ["py_library", "py_binary", "py_test"]:
         linter = ctx.attr._python_linter
+    elif kind in ["java_library", "java_binary", "java_test"]:
+        linter =  ctx.attr._java_linter
     elif kind in ["go_library", "go_binary", "go_test"]:
         linter =  ctx.attr._golang_linter
     elif kind in ["jsonnet_library", "jsonnet_to_json"]:
@@ -83,6 +86,13 @@ def _lint_workspace_aspect_impl(target, ctx):
         src_files += _gather_srcs(ctx.rule.attr.srcs)
     if hasattr(ctx.rule.attr, 'src'):
         src_files += _gather_srcs([ctx.rule.attr.src])
+    
+    src_files = [f for f in src_files 
+                 if f.extension not in linter[LinterInfo].ignore_extensions]
+
+    # Ignore missing src_files if any
+    if len(src_files) == 0:
+        return []
 
     # Note: Don't add ctx.label.package to prefix as it is implicitly added
     prefix = "__linting_system/" + ctx.label.name
@@ -205,6 +215,9 @@ def linting_aspect_generator(
             # LINTERS
             '_python_linter' : attr.label(
                 default = linters_map["python"],
+            ),
+            '_java_linter' : attr.label(
+                default = linters_map["java"],
             ),
             '_golang_linter' : attr.label(
                 default = linters_map["golang"],
